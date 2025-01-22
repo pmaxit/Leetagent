@@ -40,7 +40,7 @@ query problemsetQuestionList($categorySlug: String, $limit: Int, $skip: Int, $fi
 """
 
 GET_PYTHON_SOLUTIONS = """
-query ugcArticleSolutionArticles($questionSlug: String!, $orderBy: ArticleOrderByEnum, $userInput: String, $tagSlugs: [String!], $skip: Int, $first: Int, $last: Int, $isMine: Boolean) {
+query ugcArticleSolutionArticles($questionSlug: String!, $orderBy: ArticleOrderByEnum, $userInput: String, $tagSlugs: [String!], $skip: Int, $before: String, $after: String, $first: Int, $last: Int, $isMine: Boolean) {
   ugcArticleSolutionArticles(
     questionSlug: $questionSlug
     orderBy: $orderBy
@@ -48,6 +48,8 @@ query ugcArticleSolutionArticles($questionSlug: String!, $orderBy: ArticleOrderB
     tagSlugs: $tagSlugs
     skip: $skip
     first: $first
+    before: $before
+    after: $after
     last: $last
     isMine: $isMine
   ) {
@@ -57,22 +59,58 @@ query ugcArticleSolutionArticles($questionSlug: String!, $orderBy: ArticleOrderB
     }
     edges {
       node {
-        uuid
-        title
-        slug
-        summary
-        author {
-          realName
-          userName
-        }
-        createdAt
-        updatedAt
-        tags {
-          name
-          slug
-        }
+        ...ugcSolutionArticleFragment
       }
     }
+  }
+}
+
+fragment ugcSolutionArticleFragment on SolutionArticleNode {
+  uuid
+  title
+  slug
+  summary
+  author {
+    realName
+    userAvatar
+    userSlug
+    userName
+    nameColor
+    certificationLevel
+    activeBadge {
+      icon
+      displayName
+    }
+  }
+  articleType
+  thumbnail
+  summary
+  createdAt
+  updatedAt
+  status
+  isLeetcode
+  canSee
+  canEdit
+  isMyFavorite
+  chargeType
+  myReactionType
+  topicId
+  hitCount
+  hasVideoArticle
+  reactions {
+    count
+    reactionType
+  }
+  title
+  slug
+  tags {
+    name
+    slug
+    tagType
+  }
+  topic {
+    id
+    topLevelCommentCount
   }
 }
 """

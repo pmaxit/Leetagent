@@ -1,6 +1,7 @@
 import requests
 from config import LEETCODE_SESSION_TOKEN, CSRF_TOKEN
 from .queries import GET_QUESTIONS, GET_PYTHON_SOLUTIONS, GET_SOLUTION_DETAIL
+from database.models import Attempt, DifficultyRating
 
 class LeetCodeClient:
     def __init__(self, base_url='https://leetcode.com/graphql'):
@@ -26,15 +27,18 @@ class LeetCodeClient:
         result = self.execute_query(GET_QUESTIONS, variables)
         return result['data']['problemsetQuestionList']['questions']
 
-    def get_python_solutions(self, question_slug):
+    def get_total_questions(self):
+        return 5000
+
+    def get_python_solutions(self, question_slug, skip=0, first=15, order_by="HOT", tag_slugs=["python3"]):
         print(f"\nFetching solutions for question slug: {question_slug}")
         # First get the solution articles list
         variables = {
             "questionSlug": question_slug,
-            "skip": 0,
-            "first": 15,
-            "orderBy": "HOT",
-            "tagSlugs": ["python3"]
+            "skip": skip,
+            "first": first,
+            "orderBy": order_by,
+            "tagSlugs": tag_slugs
         }
         result = self.execute_query(GET_PYTHON_SOLUTIONS, variables)
         solutions = result['data']['ugcArticleSolutionArticles']['edges']
@@ -45,27 +49,53 @@ class LeetCodeClient:
         for solution in solutions:
             node = solution['node']
             detail_vars = {
-                "uuid": node['uuid'],
-                "title": node['title'],
-                "slug": node['slug'],
+                "topicId": node['topicId']
             }
-            print(f"Fetching details for solution with vars: {detail_vars}")
             
             detail_result = self.execute_query(GET_SOLUTION_DETAIL, detail_vars)
             
             if 'data' in detail_result and detail_result['data']['ugcArticleSolutionArticle']:
                 solution_data = detail_result['data']['ugcArticleSolutionArticle']
                 detailed_solution = {
+                    'content': solution_data['content'],
                     'summary': solution_data['summary'],
                     'author_name': solution_data['author']['userName'],
                     'created_at': solution_data['createdAt'],
                     'updated_at': solution_data['updatedAt']
                 }
-                print(f"Successfully extracted solution by {detailed_solution['author_name']}")
                 detailed_solutions.append(detailed_solution)
             else:
-                print(f"Failed to get details for uuid: {detail_vars['uuid']}")
+                print(f"Failed to get details for topicId: {detail_vars['topicId']}")
                 print(f"Response: {detail_result}")
         
         print(f"Returning {len(detailed_solutions)} detailed solutions\n")
         return detailed_solutions
+
+    def record_attempt(self, question_id: int, difficulty: DifficultyRating, session):
+        """
+        Record an attempt for a question and calculate next review date
+        
+        Args:
+            question_id: ID of the question attempted
+            difficulty: DifficultyRating enum value (HARD/MEDIUM/EASY)
+            session: SQLAlchemy session
+        
+        Returns:
+            Attempt: The created attempt object
+        """
+        attempt = Attempt(
+            question_id=question_id,
+            difficulty_rating=difficulty
+        )
+        
+        # Calculate next review date using SM-2 algorithm
+        attempt.calculate_next_review(difficulty)
+        
+        # Add and commit to database
+        session.add(attempt)
+        session.commit()
+        
+        print(f"\nRecorded attempt for question {question_id}")
+        print(f"Next review scheduled for: {attempt.next_review_at}")
+        
+        return attempt
