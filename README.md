@@ -28,12 +28,13 @@ This project aims to:
 - Flexible storage options:
   - SQLite database storage
   - JSON file storage
-- Track personal practice attempts with spaced repetition
+- Track personal practice attempts with spaced repetition:
+  - ANKI-style spaced repetition algorithm
+  - Customizable review intervals
+  - Performance-based difficulty adjustment
+  - Review reminders for optimal learning
 - View statistics about questions and learning progress
-
-## Installation
-
-// ... existing code ...
+- Smart question selection based on your learning curve
 
 ## Usage
 
@@ -48,6 +49,9 @@ This project aims to:
 | `--solutions` | Show number of solutions per question | flag | - |
 | `--record-attempt` | Record an attempt for a question | integer (question_id) | - |
 | `--difficulty` | Difficulty rating for the attempt | string | `EASY`, `MEDIUM`, `HARD` |
+| `--review` | Start a review session | flag | - |
+| `--review-due` | Show questions due for review | flag | - |
+| `--set-interval` | Set custom review intervals | string | `1,3,7,14,30,90` |
 
 ### Examples
 
@@ -80,6 +84,43 @@ python app.py --record-attempt 1 --difficulty MEDIUM
 ```bash
 python app.py --solutions
 ```
+
+## Review due questions
+```bash
+python app.py --review-due
+```
+
+## Start a review session
+```bash
+python app.py --review
+```
+
+## Set custom review intervals (in days)
+```bash
+python app.py --set-interval "1,3,7,14,30,90"
+```
+
+## Spaced Repetition System
+
+The tool implements an ANKI-style spaced repetition system to help you maintain and improve your problem-solving skills:
+
+- **Review Schedule**: Questions are automatically scheduled for review based on:
+  - Your performance on previous attempts
+  - The difficulty of the question
+  - Time since last review
+
+- **Performance Levels**:
+  - Again (1): Review tomorrow
+  - Hard (2): Review in 3 days
+  - Good (3): Double the previous interval
+  - Easy (4): Triple the previous interval
+
+- **Features**:
+  - Automatic scheduling of reviews
+  - Performance tracking over time
+  - Difficulty adjustment based on success rate
+  - Review reminders via optional notifications
+  - Statistics on learning progress
 
 ## Contributing
 1. Added a Table of Contents

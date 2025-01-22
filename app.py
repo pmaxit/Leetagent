@@ -124,13 +124,12 @@ def process_batch(batch_data, storage_type='db'):
         if session:
             session.close()
 
-def fetch_questions(client, session, total_questions, storage_type='db'):
+def fetch_questions(client, session, total_questions, storage_type='db', batch_size=10):
     """Fetch and store questions from LeetCode using HF datasets for parallel processing"""
     print(f"Total available questions: {total_questions}")
     print(f"Storage type: {storage_type}")
     
     # Configure batching
-    batch_size = 10
     num_batches = (total_questions + batch_size - 1) // batch_size
     
     # Create batch data
@@ -204,6 +203,8 @@ def main():
     parser.add_argument('--solutions', action='store_true', help='Show number of solutions per question')
     parser.add_argument('--record-attempt', type=int, metavar='QUESTION_ID', help='Record an attempt for a question')
     parser.add_argument('--difficulty', choices=['EASY', 'MEDIUM', 'HARD'], help='Difficulty rating for the attempt')
+    # batch size
+    parser.add_argument('--batch-size', type=int, default=100, help='Batch size for fetching questions')
     
     args = parser.parse_args()
     
@@ -215,7 +216,7 @@ def main():
         drop_and_init_db()
 
     if args.fetch:
-        fetch_questions(client, session, args.fetch, args.storage_type)
+        fetch_questions(client, session, args.fetch, args.storage_type, args.batch_size)
 
     if args.stats:
         show_statistics(session)
