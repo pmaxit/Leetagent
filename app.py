@@ -194,6 +194,54 @@ def show_question_solutions(session):
         solution_count = len(question.solutions)
         print(f"{question.title}: {solution_count} solutions")
 
+def load_json_to_db(session, json_dir):
+    """Load data from JSON files into database tables"""
+    import json
+    import os
+    
+    try:
+        # Get all JSON files in the directory
+        json_files = [f for f in os.listdir(json_dir) if f.endswith('.json')]
+        
+        if not json_files:
+            print(f"No JSON files found in {json_dir}")
+            return
+        
+        total_questions = 0
+        total_solutions = 0
+        
+        for file_name in tqdm(json_files, desc="Processing JSON files"):
+            file_path = os.path.join(json_dir, file_name)
+            
+            with open(file_path, 'r') as f:
+                batch_data = json.load(f)
+                
+                for item in batch_data:
+                    # Create Question
+                    question = Question(**item['question'])
+                    session.add(question)
+                    session.flush()  # Get the question ID
+                    
+                    # Create Solutions
+                    for sol_data in item['solutions']:
+                        solution = Solution(
+                            question_id=question.id,
+                            **sol_data
+                        )
+                        session.add(solution)
+                    
+                    total_questions += 1
+                    total_solutions += len(item['solutions'])
+            
+            session.commit()
+        
+        print(f"\nSuccessfully imported {total_questions} questions and {total_solutions} solutions")
+        
+    except Exception as e:
+        print(f"Error loading JSON data: {str(e)}")
+        session.rollback()
+        raise
+
 def main():
     parser = argparse.ArgumentParser(description='LeetCode Manager')
     parser.add_argument('--init-db', action='store_true', help='Drop and initialize the database')
@@ -204,7 +252,9 @@ def main():
     parser.add_argument('--record-attempt', type=int, metavar='QUESTION_ID', help='Record an attempt for a question')
     parser.add_argument('--difficulty', choices=['EASY', 'MEDIUM', 'HARD'], help='Difficulty rating for the attempt')
     # batch size
-    parser.add_argument('--batch-size', type=int, default=100, help='Batch size for fetching questions')
+    parser.add_argument('--batch-size', type=int, default=1, help='Batch size for fetching questions')
+    parser.add_argument('--load-json', type=str, metavar='DIR',
+                       help='Load data from JSON files in the specified directory into database')
     
     args = parser.parse_args()
     
@@ -232,6 +282,9 @@ def main():
         difficulty = DifficultyRating[args.difficulty]
         client.record_attempt(args.record_attempt, difficulty, session)
         print(f"Recorded {args.difficulty} attempt for question {args.record_attempt}")
+
+    if args.load_json:
+        load_json_to_db(session, args.load_json)
 
     session.close()
 
