@@ -31,7 +31,6 @@ class LeetCodeClient:
         return 5000
 
     def get_python_solutions(self, question_slug, skip=0, first=15, order_by="HOT", tag_slugs=["python3"]):
-        print(f"\nFetching solutions for question slug: {question_slug}")
         # First get the solution articles list
         variables = {
             "questionSlug": question_slug,
@@ -42,7 +41,6 @@ class LeetCodeClient:
         }
         result = self.execute_query(GET_PYTHON_SOLUTIONS, variables)
         solutions = result['data']['ugcArticleSolutionArticles']['edges']
-        print(f"Found {len(solutions)} initial solution entries")
         
         # Then get detailed content for each solution
         detailed_solutions = []
@@ -68,7 +66,6 @@ class LeetCodeClient:
                 print(f"Failed to get details for topicId: {detail_vars['topicId']}")
                 print(f"Response: {detail_result}")
         
-        print(f"Returning {len(detailed_solutions)} detailed solutions\n")
         return detailed_solutions
 
     def record_attempt(self, question_id: int, difficulty: DifficultyRating, session):

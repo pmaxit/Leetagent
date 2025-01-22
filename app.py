@@ -7,6 +7,9 @@ from tqdm import tqdm
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
+from datasets import Dataset
+from itertools import islice
+import multiprocessing
 
 async def fetch_batch(client, session, skip, batch_size):
     """Fetch a single batch of questions and their solutions"""
@@ -38,60 +41,123 @@ async def fetch_batch(client, session, skip, batch_size):
     
     return batch_results
 
-def process_batch(start_idx, batch_size):
-    """Process a batch in a separate process"""
-    client = LeetCodeClient()  # Create new client instance for each process
-    session = SessionLocal()  # Create new session for each process
+def process_batch(batch_data, storage_type='db'):
+    """Process a batch of questions in a worker process
+    Args:
+        batch_data (dict): Batch information containing start_idx and batch_size
+        storage_type (str): Storage type - 'db' for database or 'file' for file storage
+    """
+    client = LeetCodeClient()  # New client per process
+    session = None
+    batch_results = []
     
     try:
-        results = asyncio.run(fetch_batch(client, session, start_idx, batch_size))
+        start_idx = batch_data['start_idx']
+        batch_size = batch_data['batch_size']
+        questions = client.get_questions(limit=batch_size, skip=start_idx)
         
-        # Save results to database within the process
-        for result in results:
-            question = result['question']
-            session.add(question)
-            session.flush()
+        if storage_type == 'db':
+            session = SessionLocal()
+        
+        for question_data in questions:
+            question_obj = {
+                'title': question_data['title'],
+                'title_slug': question_data['titleSlug'],
+                'difficulty': question_data['difficulty'],
+                'frontend_id': question_data['frontendQuestionId'],
+                'ac_rate': str(question_data['acRate'])
+            }
             
-            for solution in result['solutions']:
-                solution.question_id = question.id
-                session.add(solution)
+            solutions = client.get_python_solutions(question_data['titleSlug'])
+            solution_objects = []
             
-        session.commit()
-        return len(results)
+            if storage_type == 'db':
+                question = Question(**question_obj)
+                session.add(question)
+                session.flush()
+                
+                for sol in solutions:
+                    solution = Solution(
+                        question_id=question.id,
+                        summary=sol['summary'],
+                        content=sol['content'],
+                        author_name=sol['author_name'],
+                        created_at=sol['created_at'],
+                        updated_at=sol['updated_at']
+                    )
+                    session.add(solution)
+            else:
+                solution_objects = [{
+                    'summary': sol['summary'],
+                    'content': sol['content'],
+                    'author_name': sol['author_name'],
+                    'created_at': sol['created_at'],
+                    'updated_at': sol['updated_at']
+                } for sol in solutions]
+                
+                batch_results.append({
+                    'question': question_obj,
+                    'solutions': solution_objects
+                })
+        
+        if storage_type == 'db':
+            session.commit()
+        else:
+            import json
+            import os
+            
+            # Create a directory for batch files if it doesn't exist
+            os.makedirs('batch_data', exist_ok=True)
+            
+            # Save batch results to a JSON file
+            batch_file = f'batch_data/batch_{start_idx}_{start_idx + batch_size}.json'
+            with open(batch_file, 'w') as f:
+                json.dump(batch_results, f, indent=2)
+            
+        return None
     except Exception as e:
-        print(f"Error in process batch {start_idx}: {str(e)}")
-        return 0
+        print(f"Error processing batch at index {start_idx}: {str(e)}")
+        if storage_type == 'db' and session:
+            session.rollback()
+        raise Exception(f"Error processing batch at index {start_idx}: {str(e)}")
     finally:
-        session.close()
+        if session:
+            session.close()
 
-async def fetch_questions(client, session, total_questions):
-    """Fetch and store questions from LeetCode using multiple workers"""
+def fetch_questions(client, session, total_questions, storage_type='db'):
+    """Fetch and store questions from LeetCode using HF datasets for parallel processing"""
     print(f"Total available questions: {total_questions}")
+    print(f"Storage type: {storage_type}")
     
-    # Configure batch processing
-    num_workers = min(8, (total_questions + 49) // 50)  # Use up to 8 workers, or fewer if limit is small
-    print(f"Using {num_workers} workers")
-    batch_size = 50
-    batches = [(i * batch_size, min(batch_size, total_questions - i * batch_size)) 
-               for i in range((total_questions + batch_size - 1) // batch_size)]
+    # Configure batching
+    batch_size = 10
+    num_batches = (total_questions + batch_size - 1) // batch_size
     
-    progress_bar = tqdm(total=total_questions, desc="Fetching questions")
+    # Create batch data
+    batch_data = [
+        {
+            'start_idx': i * batch_size,
+            'batch_size': min(batch_size, total_questions - i * batch_size)
+        }
+        for i in range(num_batches)
+    ]
     
-    # Create process pool and execute batches
-    with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        futures = []
-        for start_idx, size in batches:
-            future = executor.submit(process_batch, start_idx, size)
-            futures.append(future)
-        
-        # Monitor progress
-        total_fetched = 0
-        for future in futures:
-            batch_count = future.result()
-            total_fetched += batch_count
-            progress_bar.update(batch_count)
+    # Create dataset and enable multiprocessing
+    dataset = Dataset.from_list(batch_data)
     
-    progress_bar.close()
+    # Process batches in parallel with progress bar
+    num_proc = multiprocessing.cpu_count()
+    print(f"Using {num_proc} workers")
+    
+    results = dataset.map(
+        lambda x: process_batch(x, storage_type),
+        num_proc=num_proc,
+        with_indices=False,
+        desc="Fetching questions",    
+    )
+    
+    # Calculate total fetched
+    total_fetched = sum(results)
     print(f"\nFetched {total_fetched} questions with their solutions!")
 
 def show_statistics(session):
@@ -133,6 +199,7 @@ def main():
     parser = argparse.ArgumentParser(description='LeetCode Manager')
     parser.add_argument('--init-db', action='store_true', help='Drop and initialize the database')
     parser.add_argument('--fetch', type=int, metavar='N', help='Fetch N number of questions')
+    parser.add_argument('--storage-type', choices=['db', 'file'], default='db', help='Storage type (db or file)')
     parser.add_argument('--stats', action='store_true', help='Show statistics')
     parser.add_argument('--solutions', action='store_true', help='Show number of solutions per question')
     parser.add_argument('--record-attempt', type=int, metavar='QUESTION_ID', help='Record an attempt for a question')
@@ -148,7 +215,7 @@ def main():
         drop_and_init_db()
 
     if args.fetch:
-        asyncio.run(fetch_questions(client, session, args.fetch))
+        fetch_questions(client, session, args.fetch, args.storage_type)
 
     if args.stats:
         show_statistics(session)

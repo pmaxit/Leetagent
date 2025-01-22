@@ -1,4 +1,6 @@
 *.db
+batch_data/
+*.json
 # Python
 __pycache__/
 *.py[cod]
